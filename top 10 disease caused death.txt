@@ -1,0 +1,10 @@
+Stroke I61, I63
+Infark miokard I21
+Diabetes mellitus E11, E10, E13
+Tuberculosis A15, A17, A18, A19
+Cirrhosis hepar K74
+Diarrheal diseases R197
+COPD J44
+Alzheimer's disease G30
+Lower respiratory infection J22
+Neonatal disorders 

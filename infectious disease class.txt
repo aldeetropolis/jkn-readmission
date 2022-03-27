@@ -1,0 +1,27 @@
+df %>% 
+       mutate(index = ifelse(rstype %in% c("", "PBI APBD"), "PBI", "Non-PBI")) %>%
+       group_by(year, index) %>%
+       summarise(sum(value))
+
+A00-A09	Intestinal infectious diseases
+A15-A19	Tuberculosis
+A20-A28	Certain zoonotic bacterial diseases
+A30-A49	Other bacterial diseases
+A50-A64	Infections with a predominantly sexual mode of transmission
+A65-A69	Other spirochetal diseases
+A70-A74	Other diseases caused by chlamydiae
+A75-A79	Rickettsioses
+A80-A89	Viral and prion infections of the central nervous system
+A90-A99	Arthropod-borne viral fevers and viral hemorrhagic fevers
+B00-B09	Viral infections characterized by skin and mucous membrane lesions
+B10	Other human herpesviruses
+B15-B19	Viral hepatitis
+B20	Human immunodeficiency virus [HIV] disease
+B25-B34	Other viral diseases
+B35-B49	Mycoses
+B50-B64	Protozoal diseases
+B65-B83	Helminthiases
+B85-B89	Pediculosis, acariasis and other infestations
+B90-B94	Sequelae of infectious and parasitic diseases
+B95-B97	Bacterial and viral infectious agents
+B99	Other infectious diseases

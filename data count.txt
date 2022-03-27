@@ -1,0 +1,4 @@
+1. number of inpatient visit from dataset (remove the duplicate) = 152057
+2. number of inpatient visit = 66939
+3. number of inpatient visit from fkrtl_2016 = 85118
+4. 

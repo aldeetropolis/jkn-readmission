@@ -1,0 +1,240 @@
+---
+title: "Readmission Rate Analysis from BPJSK dataset 2015-2016"
+author: "aldilas"
+date: "4/10/2019"
+output: pdf_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load library
+```{r message=FALSE, warning=FALSE, MESSAGE=FALSE}
+library(knitr)
+library(haven)
+library(tidyverse)
+library(MatchIt)
+library(tidymodels)
+library(fastDummies)
+library(splitstackshape)
+```
+
+## Load data
+```{r}
+df_index <- read_csv("data_v6.csv")
+```
+
+## Frequency Analytics Demographics
+```{r}
+df_index %>% count(label) %>% mutate(proportion = round((n / sum(n))*100, 2))
+```
+
+```{r}
+df_index %>% summarise(mean_age = round(mean(age),2), sd_age = round(sd(age),2), mean_los = round(mean(los),2), sd_los = round(sd(los), 2))
+df_index %>% select(label, age, los) %>% pivot_longer(-label, names_to = "variable", values_to = "value") %>% group_by(label, variable) %>% tally() %>% pivot_wider(names_from = label, values_from = value) %>% group_by(variable) %>% mutate(mean_I = round(mean(unlist(I)),2), mean_R = round(mean(unlist(R)),2), SD_I = round(sd(unlist(I)),2), SD_R = round(sd(unlist(R)),2), pval = t.test(unlist(I), unlist(R))$p.value) %>% select(-I, -R)
+```
+
+```{r}
+df_index %>% group_by(ageGroup) %>% tally() %>% mutate(proportion = round((n / sum(n))*100, 2))
+df_index %>% group_by(label, ageGroup) %>% tally() %>% mutate(proportion = round((n / sum(n))*100, 2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+chisq.test(table(df_index$ageGroup, df_index$label))
+```
+
+```{r}
+df_index %>% group_by(gender) %>% tally() %>% mutate(proportion = round((n / sum(n))*100, 2))
+df_index %>% group_by(label, gender) %>% tally() %>% mutate(proportion = round((n / sum(n))*100, 2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+chisq.test(table(df_index$gender, df_index$label))
+```
+
+```{r}
+df_index %>% group_by(severity) %>% tally() %>% mutate(proportion = round((n/sum(n))*100, 2))
+df_index %>% group_by(label, severity) %>% tally() %>% mutate(proportion = round((n/sum(n))*100, 2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+df_index1 <- df_index %>% filter(!is.na(severity))
+chisq.test(table(df_index1$severity, df_index1$label))
+```
+
+```{r}
+df_index %>% group_by(classprocedure) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2))
+df_index %>% group_by(label, classprocedure) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+chisq.test(table(na.omit(df_index$classprocedure), df_index$label))
+```
+
+```{r}
+df_index %>% group_by(membership) %>% tally() %>% mutate(proportion = round((n/sum(n))*100, 2))
+df_index %>% group_by(label, membership) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+chisq.test(table((df_index$membership), df_index$label))
+```
+
+```{r}
+df_index %>% group_by(region) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2))
+df_index %>% group_by(label, region) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+chisq.test(table(df_index$region, df_index$label))
+```
+
+```{r}
+df_index %>% group_by(label, losGroup) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+chisq.test(table(na.omit(df_index$losGroup), df_index$label))
+```
+```{r}
+df_index %>% group_by(outcome) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2))
+df_index %>% group_by(label, outcome) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2)) %>% pivot_wider(names_from = label, values_from = c("n", "proportion"))
+chisq.test(table(na.omit(df_index$outcome), df_index$label))
+```
+
+# Calculate most medical condition in each group
+```{r}
+df_dx <- as.data.frame(str_split_fixed(df_index$dx, ",", max(unlist(lapply(strsplit(df_index$dx, ","), length)))))
+names(df_dx) <- paste0("dx_", 1:ncol(df_dx))
+df_dx$label <- df_index$label
+df_dx$ID <- df_index$ID
+```
+
+```{r}
+df_dx1 <- df_dx %>%
+  pivot_longer(cols = starts_with("dx_"), names_to = "var", values_to = "dx") %>%
+  mutate_at(vars(dx), list(~na_if(.,""))) %>% 
+  mutate_at(vars(dx), list(~na_if(.,"NA"))) %>%
+  filter(!is.na(dx)) %>%
+  select(-var) %>%
+  group_by(label, dx) %>%
+  tally() %>%
+  arrange(label, -n) %>% 
+  pivot_wider(id_cols = dx, names_from = label, values_from = n) %>% 
+  mutate(total = R+I, proportion_R = round((R/total)*100,2))
+```
+
+
+## 10 common medical condition (based on full code main diagnosis)
+```{r}
+diseaserate1 <- df_index %>% filter(!grepl("Z", icd_1)) %>% group_by(icd_1) %>% tally()
+diseaserate2 <- df_index %>% filter(!grepl("Z", icd_1)) %>% group_by(icd_1, label) %>% tally() %>% mutate(proportion = round((n / sum(n))*100, 2)) %>% select(-n) %>% pivot_wider(names_from = label, values_from = proportion) %>% select(-I) %>% ungroup()
+diseaserate <- full_join(diseaserate1, diseaserate2, by="icd_1") %>% arrange(-n)
+diseasecost1 <- df_index %>% filter(!grepl("Z", icd_1) & label == "R") %>% group_by(icd_1) %>% summarise(IndexCost = mean(cost), ReadmissionCost = mean(re_cost))
+diseasecost <- left_join(diseasecost1, diseaserate, by="icd_1") %>% arrange(-n)
+```
+
+## 10 common medical condition (based on 3-digit code main diagnosis)
+```{r}
+diseaserate1_3dig <- df_index %>% filter(!grepl("Z", diseaseclass)) %>% group_by(icd_1) %>% tally()
+diseaserate2_3dig <- df_index %>% filter(!grepl("Z", diseaseclass)) %>% group_by(icd_1, label) %>% tally() %>% mutate(proportion = round((n / sum(n))*100, 2)) %>% select(-n) %>% pivot_wider(names_from = label, values_from = proportion) %>% select(-I) %>% ungroup()
+diseaserate <- full_join(diseaserate1, diseaserate2, by="icd_1") %>% arrange(-n)
+diseasecost1 <- df_index %>% filter(!grepl("Z", icd_1) & label == "R") %>% group_by(icd_1) %>% summarise(IndexCost = mean(cost), ReadmissionCost = mean(re_cost))
+diseasecost <- left_join(diseasecost1, diseaserate, by="icd_1") %>% arrange(-n)
+```
+
+# Weighting with Propensity Score Analysis
+```{r}
+exclude <- df_index %>% filter(label == "I" & outcome == "Dead")
+df_class <- anti_join(df_index, exclude) %>% select(age, gender, membership, severity, classprocedure, dxclass, label, year, los) %>% dummy_cols(select_columns = c("gender", "membership", "label", "severity", "classprocedure", "label"), remove_first_dummy = FALSE) %>% select(age, dxclass, year, los, `gender_LAKI-LAKI`, membership_PBI, `severity_RINGAN (RAWAT INAP KEPARAHAN 1)`, `severity_SEDANG (RAWAT INAP KEPARAHAN 2)`, `severity_BERAT (RAWAT INAP KEPARAHAN 3)`, `classprocedure_Prosedur Rawat Inap`, label_R) %>% rename(male = `gender_LAKI-LAKI`, pbi = membership_PBI, severity1 = `severity_RINGAN (RAWAT INAP KEPARAHAN 1)`, severity2 = `severity_SEDANG (RAWAT INAP KEPARAHAN 2)`, severity3 = `severity_BERAT (RAWAT INAP KEPARAHAN 3)`, procedure = `classprocedure_Prosedur Rawat Inap`)
+match.it <- matchit(label_R ~ age + male + los + severity1 + severity2 + severity3 + pbi + procedure, data = df_class, method = "nearest")
+df_match <- match.data(match.it, weights = "weights")
+model0 <- lm(label_R ~ age + male + los + severity1 + severity2 + severity3 + pbi + procedure, data = df_class)
+summary(model0)
+model1 <- glm(label_R ~ male + age + los + severity1 + severity2 + severity3 + pbi + procedure, data = df_class, family = "binomial")
+summary(model1)
+```
+
+
+# Analysis of variable beside ICD
+```{r}
+
+```
+
+```{r}
+exclude <- df_index %>% filter(label == "I" & outcome == "Dead")
+df_class <- anti_join(df_index, exclude) %>% select(ageGroup, gender, dxclass, label, year) %>% dummy_cols(select_columns = c("ageGroup", "gender", "label"), remove_first_dummy = TRUE) %>% select(-ageGroup, -gender, -label)
+train <- filter(df_class, year == 2015) %>% cSplit_e("dxclass", sep = ",", type = "character", fill = 0) %>% select(-year, -dxclass, -dxclass_180, -dxclass_604, -dxclass_804, -dxclass_NA)
+test <- filter(df_class, year == 2016) %>% cSplit_e("dxclass", sep = ",", type = "character", fill = 0) %>% select(-year, -dxclass, -dxclass_NA)
+cols_to_keep <- intersect(colnames(train), colnames(test))
+cols_to_add <- setdiff(colnames(train), colnames(test))
+test <- test %>% select(all_of(cols_to_keep))
+test[cols_to_add] <- 0
+```
+
+```{r}
+recipe_prep <- train %>% recipe(label_R ~ .) %>% step_num2factor(all_predictors(), all_outcomes(), levels = c("0", "1"), transform = function(x) x + 1) %>% prep()
+train_baked <- bake(recipe_prep, new_data = train)
+test_baked <- bake(recipe_prep, new_data = test)
+```
+
+# Modelling GLM
+```{r}
+logistic_glm <- logistic_reg(mode = "classification") %>% set_engine("glm") %>% fit(label_R ~ ., data = train_baked)
+predictions_glm <- logistic_glm %>% predict(new_data = test_baked) %>% bind_cols(test_baked %>% select(label_R))
+```
+
+# Modelling Random Forest
+```{r}
+rf_train <- rand_forest(mode = "classification") %>% set_engine("randomForest") %>% fit(label_R ~ ., data = train_baked)
+```
+
+## Logistic regression (with adjustment)
+```{r}
+library(MatchIt)
+df_index$label <- ifelse(df_index$target == "UR", 1, 0)
+df_match1 <- ungroup(df_index[complete.cases(df_index),])
+match.it <- matchit(label ~ age + gender + los + severity + membership, data = df_match1, method = "nearest")
+df_match <- match.data(match.it)
+df_match$dx <- ifelse(df_match$icd_1 == "A010", "Typhoid fever", ifelse(df_match$icd_1 == "A91", "DHF", ifelse(df_match$icd_1 == "A09", "Gastroenteritis", ifelse(df_match$icd_1 == "K30", "Dyspepsia", ifelse(df_match$icd_1 == "A90", "DF", ifelse(df_match$icd_1 == "I10", "HT", ifelse(df_match$icd_1 == "I639", "Cerebral infarct", ifelse(df_match$icd_1 == "I500", "CHF", ifelse(df_match$icd_1 == "J189", "Pneumonia", ifelse(df_match$icd_1 == "J180", "Bronchopneumonia", "Others"))))))))))
+df_match$typhoid <- ifelse(df_match$icd_1 == "A010", 1, 0)
+df_match$dhf <- ifelse(df_match$icd_1 == "A91", 1, 0)
+df_match$gastroenteritis <- ifelse(df_match$icd_1 == "A09", 1, 0)
+df_match$dyspepsia <- ifelse(df_match$icd_1 == "A90", 1, 0)
+df_match$df <- ifelse(df_match$icd_1 == "K30", 1, 0)
+df_match$ht <- ifelse(df_match$icd_1 == "I10", 1, 0)
+df_match$cerebralinfarct <- ifelse(df_match$icd_1 == "I639", 1, 0)
+df_match$chf <- ifelse(df_match$icd_1 == "I500", 1, 0)
+df_match$pneumonia <- ifelse(df_match$icd_1 == "J189", 1, 0)
+df_match$bronchopneumonia <- ifelse(df_match$icd_1 == "J180", 1, 0)
+fit <- glm(label~typhoid+dhf+gastroenteritis+dyspepsia+df+ht+cerebralinfarct+chf+pneumonia+bronchopneumonia, data = df_match, family = binomial())
+summary(fit)
+exp(cbind(coef(fit), confint(fit)))
+```
+
+## Logistic regression (without adjustment)
+```{r}
+fit <- glm(label~gender, data=df_index, family=binomial(link = "logit"))
+summary(fit)
+b <- exp(cbind(coef(fit), confint(fit)))
+```
+
+# Adjustment with PSM
+```{r}
+df_index$label <- if_else(df_index$target == "UR", 1, 0)
+df_match1 <- ungroup(df_index[complete.cases(df_index),])
+match.it <- matchit(label ~ age + gender + severity + membership, data = df_match1, method = "nearest")
+df_match <- match.data(match.it)
+df_match$typhoid <- if_else(df_match$icd_1 == "A010", 1, 0)
+df_match$dhf <- if_else(df_match$icd_1 == "A91", 1, 0)
+df_match$gastroenteritis <- if_else(df_match$icd_1 == "A09", 1, 0)
+df_match$dyspepsia <- if_else(df_match$icd_1 == "A90", 1, 0)
+df_match$df <- if_else(df_match$icd_1 == "K30", 1, 0)
+df_match$ht <- if_else(df_match$icd_1 == "I10", 1, 0)
+df_match$cerebralinfarct <- if_else(df_match$icd_1 == "I639", 1, 0)
+df_match$chf <- if_else(df_match$icd_1 == "I500", 1, 0)
+df_match$pneumonia <- if_else(df_match$icd_1 == "J189", 1, 0)
+df_match$bronchopneumonia <- if_else(df_match$icd_1 == "J180", 1, 0)
+```
+
+# Split training set (2015) and test set (2016)
+```{r}
+train <- df %>% filter(year == 2015)
+test <- df %>% filter(year == 2016)
+```
+
+# Logistic regression
+```{r}
+glm.fits = glm(data = train, label~diseaseclass, family=binomial)
+summary(glm.fits)$coef
+coef(glm.fits)
+glm.probs = predict(glm.fits,type ="response")
+glm.probs[1:10]
+```
+
+```{r}
+tree.fits = ctree(data = test, label~ageGroup)
+plot(tree.fits)
+```

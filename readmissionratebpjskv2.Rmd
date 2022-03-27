@@ -1,0 +1,265 @@
+---
+title: "readmissionratebpjsk"
+author: "aldilas"
+date: "4/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load library
+```{r message=FALSE, warning=FALSE, MESSAGE=FALSE}
+library(haven)
+library(tidyverse)
+library(psych)
+library(lubridate)
+library(survey)
+library(eeptools)
+library(stringr)
+library(party)
+library(sjmisc)
+library(data.table)
+library(readxl)
+```
+
+## Load data FKRTL & Kepesertaan
+
+```{r}
+kepesertaan <- read_dta("C:/Users/aldilas/Documents/BPJSKv2/01 KEPESERTAAN 260819.dta") %>% select(PSTV01, PSTV03, PSTV05, PSTV07, PSTV08) %>% as_factor(levels = "both")
+fkrtl <- read_dta("C:/Users/aldilas/Documents/BPJSKv2/04 FKRTL 260819.dta") %>% as_factor()
+diagnosissekunder <- read_dta("C:/Users/aldilas/Documents/BPJSKv2/05 FKRTL Diagnosis Sekunder 260819.dta") %>% as_factor()
+diagnosisprimer <- select(fkrtl, PSTV01, FKL02, FKL15, FKL16, FKL16A, FKL17, FKL18, FKL18A) %>% arrange(FKL02)
+fkrtl$PSTV01 <- as.character(fkrtl$PSTV01)
+kepesertaan$PSTV01 <- as.character(kepesertaan$PSTV01)
+fkrtl$FKL02 <- as.character(fkrtl$FKL02)
+
+```
+
+## Join diagnosis
+```{r}
+kodediagnosis <- read_excel("BPJSKv2/Kode ICD10 untuk diagnosis FKRTL.xlsx", sheet = "Sheet1")
+diagnosissekunder <- arrange(diagnosissekunder, FKL02)
+diagnosisjoin1 <- left_join(diagnosisprimer, diagnosissekunder, by = "FKL02", copy = F, keep = F)
+diagnosisjoin <- left_join(diagnosisjoin1, kodediagnosis, by = c("FKL15"))
+kodediagnosis$FKL24_A <- kodediagnosis$FKL15
+diagnosisjoin <- left_join(diagnosisjoin, kodediagnosis, by = "FKL24_A")
+```
+
+
+## Calculate LOS and remove inhospital stay less than 1 days
+```{r}
+fklranap1 <- fkrtl %>% arrange(PSTV01, FKL03) %>% filter(FKL10 == 2 & FKL14 != 2)
+fklranap1$los <- as.Date(as.character(fklranap1$FKL04), format="%Y-%m-%d")-
+  as.Date(as.character(fklranap1$FKL03), format="%Y-%m-%d")
+fklranap2 <- fklranap1 %>% filter(los > 1 & !is.na(FKL50)) %>% mutate(year = lubridate::year(FKL03))
+fklranap2$interval = NA
+```
+
+## Join with kepesertaan
+```{r}
+fklranap3 <- left_join(fklranap2, kepesertaan, by=c("PSTV01"))
+fklranap3 <- fklranap3[!duplicated(fklranap3$FKL02), ]
+fklranap <- fklranap3 %>% filter(FKL03 >= PSTV03)
+```
+
+## Calculate age & Discretize age groups
+```{r}
+age <- round(age_calc(na.omit(as.Date(fklranap$PSTV03, "%Y-%m-%d")),
+                      enddate=as.Date(fklranap$FKL03, "%Y-%m-%d"),
+                      units= "years"))
+
+fklranap$age[!is.na(fklranap$PSTV03)] <- age
+df <- fklranap %>% mutate(ageGroup = cut(age, breaks=c(0,5,12,17,26,36,46,56,66,120), labels=c("Balita", "Anak-anak", "Remaja awal", "Remaja akhir","Dewasa awal", "Dewasa akhir", "Lansia awal", "Lansia akhir", "Manula"), include.lowest = TRUE, right=FALSE))
+```
+
+## Split by year
+```{r}
+df_2015 <- df %>% filter(year == 2015)
+df_2016 <- df %>% filter(year == 2016)
+```
+
+## Calculate interval between 2 visits
+```{r}
+df_2015 <- arrange(df_2015, PSTV01, FKL03)
+for (i in 2:nrow(df_2015)){
+  if(df_2015$PSTV01[i]==df_2015$PSTV01[i-1]){
+    df_2015$interval[i] <- as.integer(difftime(df_2015$FKL03[i],df_2015$FKL04[i-1]))
+  }
+}
+
+df_2016 <- arrange(df_2016, PSTV01, FKL03)
+for (i in 2:nrow(df_2016)){
+  if(df_2016$PSTV01[i]==df_2016$PSTV01[i-1]){
+    df_2016$interval[i] <- as.integer(difftime(df_2016$FKL03[i],df_2016$FKL04[i-1]))
+  }
+}
+
+df <- arrange(df, PSTV01, FKL03)
+for (i in 2:nrow(df)){
+  if(df$PSTV01[i]==df$PSTV01[i-1]){
+    df$interval[i] <- as.integer(difftime(df$FKL03[i],df$FKL04[i-1]))
+  }
+}
+```
+
+## Labelize
+```{r}
+df <- df[!duplicated(df$FKL02), ]
+df_2015 <- df_2015[!duplicated(df_2015$FKL02), ]
+df_2016 <- df_2016[!duplicated(df_2016$FKL02), ]
+
+df$readmission <- ifelse(is.na(df$interval), "I", ifelse(df$interval > 30 | grepl("Z", df$FKL15) | grepl("Z", df$FKL17), "OR", ifelse(df$interval <= 30 & df$interval >= 0, "UR", NA)))
+
+df_2015$readmission <- ifelse(is.na(df_2015$interval), "I", ifelse(df_2015$interval > 30 | grepl("Z", df_2015$FKL15) | grepl("Z", df_2015$FKL17), "OR", ifelse(df_2015$interval <= 30 & df_2015$interval >= 0, "UR", NA)))
+
+df_2016$readmission <- ifelse(is.na(df_2016$interval), "I", ifelse(df_2016$interval > 30 | grepl("Z", df_2016$FKL15) | grepl("Z", df_2016$FKL17), "OR", ifelse(df_2016$interval <= 30 & df_2016$interval >= 0, "UR", NA)))
+
+df <- filter(df, !is.na(readmission))
+df_2015 <- filter(df_2015, !is.na(readmission))
+df_2016 <- filter(df_2016, !is.na(readmission))
+```
+
+```{r}
+library(readxl)
+icdgroup <- read_excel("C:/Users/aldilas/Google Drive/readmission rate BPJSK/icdgroup.xlsx")
+```
+
+```{r WARNING=FALSE}
+df$alphabet <- str_sub(df$FKL50, 1, 2)
+df <- left_join(df, icdgroup, by = "alphabet")
+```
+
+## Renames
+```{r}
+setnames(df, old = c("PSTV01", "PSTV03", "PSTV06", "PSTV05", "PSTV07", "PSTV08", "FKL02", "FKL03", "FKL04", "FKL05", "FKL06A", "FKL07", "FKL09", "FKL13", "FKL14", "FKL15", "FKL17", "FKL21", "FKL23", "FKL30", "FKL48", "FKL50", "PSTV15"), new = c("ID", "DOB", "marital", "gender", "kelaspeserta", "membership", "visitID", "inDate", "outDate", "provinsi", "distrik", "rsowner", "rstype", "kelasrawat", "statusPulang", "index_icd_1", "index_icd_2", "inacbg", "severity", "prosedur", "cost", "index_diagnosis", "weight"))
+
+setnames(df_2015, old = c("PSTV01", "PSTV03", "PSTV06", "PSTV05", "PSTV07", "PSTV08", "FKL02", "FKL03", "FKL04", "FKL05", "FKL06A", "FKL07", "FKL09", "FKL13", "FKL14", "FKL15", "FKL17", "FKL21", "FKL23", "FKL30", "FKL48", "FKL50", "PSTV15"), new = c("ID", "DOB", "marital", "gender", "kelaspeserta", "membership", "visitID", "inDate", "outDate", "provinsi", "distrik", "rsowner", "rstype", "kelasrawat", "statusPulang", "index_icd_1", "index_icd_2", "inacbg", "severity", "prosedur", "cost", "index_diagnosis", "weight"))
+
+setnames(df_2016, old = c("PSTV01", "PSTV03", "PSTV06", "PSTV05", "PSTV07", "PSTV08", "FKL02", "FKL03", "FKL04", "FKL05", "FKL06A", "FKL07", "FKL09", "FKL13", "FKL14", "FKL15", "FKL17", "FKL21", "FKL23", "FKL30", "FKL48", "FKL50", "PSTV15"), new = c("ID", "DOB", "marital", "gender", "kelaspeserta", "membership", "visitID", "inDate", "outDate", "provinsi", "distrik", "rsowner", "rstype", "kelasrawat", "statusPulang", "index_icd_1", "index_icd_2", "inacbg", "severity", "prosedur", "cost", "index_diagnosis", "weight"))
+```
+
+## Label surgical or medical
+```{r}
+df$surgical <- ifelse(str_sub(df$inacbg,3,3)==1, "1", "0")
+df_2015$surgical <- ifelse(str_sub(df_2015$inacbg,3,3)==1, "1", "0")
+df_2016$surgical <- ifelse(str_sub(df_2016$inacbg,3,3)==1, "1", "0")
+```
+
+## Make NA explicit
+```{r}
+df$rstype <- fct_explicit_na(df$rstype, na_level = "(Missing)")
+```
+
+## Get Index admissions
+```{r}
+df_predict <- df %>% group_by(ID) %>% mutate(target = lead(readmission, order_by = ID), re_cost = lead(cost, order_by = ID))
+df_predict$diseaseclass <- str_sub(df_predict$index_diagnosis, 1, 3)
+```
+
+## Demographics
+
+```{r fig.width=10}
+df %>% group_by(readmission) %>% tally(wt = weight) %>% mutate(proportion = round((n / sum(n))*100, 2))
+df %>% group_by(gender, readmission) %>% tally(wt = weight) %>% mutate(proportion = round((n / sum(n))*100, 2))
+df %>% group_by(readmission) %>% summarise(meanage = weighted.mean(age, weight), n = n(), SD = sd(age)) %>% mutate(proportion = (n/sum(n))*100)
+df %>% filter(!is.na(ageGroup)) %>% group_by(readmission, ageGroup) %>% tally() %>% mutate(proportion = round((n / sum(n))*100,2))
+df %>% filter(!is.na(readmission)) %>% group_by(readmission, membership) %>% summarise(meancost = mean(cost), sd = sd(cost), n = n()) %>% mutate(proportion = round((n/sum(n))*100, 2))
+df %>% filter(!is.na(readmission)) %>% group_by(rstype, readmission) %>% summarise(n = n()) %>% mutate(proportion = round((n/sum(n))*100,2))
+df %>% filter(!is.na(readmission)) %>% group_by(rstype) %>% tally() %>% mutate(proportion = (n/sum(n))*100)
+df %>% filter(!is.na(readmission)) %>% group_by(statusPulang, readmission) %>% tally() %>% mutate(proportion = round((n/sum(n))*100,2))
+df %>% filter(!is.na(readmission)) %>% group_by(severity, readmission) %>% tally() %>% mutate(proportion = round((n/sum(n))*100, 2))
+df %>% filter(!is.na(readmission)) %>% group_by(readmission) %>% summarise(meanlos = weighted.mean(los, weight), sd = sd(los))
+df %>% filter(!is.na(readmission)) %>% group_by(kelasrawat, readmission) %>% tally() %>% mutate(proportion = round((n/sum(n))*100, 2))
+df %>% filter(!is.na(readmission)) %>% group_by(readmission) %>% summarise(meanlos = round(mean(los),2), sd=round(sd(los),2), min(los), max(los))
+df %>% filter(!is.na(readmission)) %>% group_by(surgical) %>% summarise(n = n()) %>% mutate(proportion = (n/sum(n))*100)
+df %>% filter(!is.na(readmission) & age > 17 & surgical == 1) %>% group_by(statusPulang) %>% summarise(n = n()) %>% mutate(proportion = (n/sum(n))*100)
+df %>% mutate(index = ifelse(membership %in% c("PBI APBN","PBI APBD"), "PBI", "Non-PBI")) %>% group_by(index) %>% summarise(n = n()) %>% mutate(proportion = (n/sum(n))*100)
+df %>% filter(!is.na(readmission)) %>% group_by(rsowner, readmission) %>% summarise(n = n()) %>% mutate(proportion = (n/sum(n))*100)
+```
+
+## Visualization
+```{r}
+hist(df$age, xlim=c(0,110), xlab="age")
+ggplot(df, aes(x = ageGroup)) + geom_bar()
+ggplot(df, aes(x = membership)) + geom_bar()
+```
+
+## Average cost
+```{r}
+diseasegroupcost <- df_predict %>% filter(target == "UR") %>% group_by(group) %>% summarise(meancost = mean(cost), readmissioncost = mean(re_cost), n = n()) %>% mutate(proportion = (n/sum(n))*100)
+df_predict %>% filter(target == "UR") %>% group_by(target) %>% summarise(meancost = mean(cost), readmissioncost = mean(re_cost), n = n()) %>% mutate(proportion = (n/sum(n))*100)
+hospitalcost <- df %>% group_by(rstype, readmission) %>% summarise(meancost = mean(cost), n = n()) %>% mutate(proportion = (n/sum(n))*100)
+```
+
+## Reshape diseasegroupcost table
+```{r}
+avgdiseasecost <- reshape2::dcast(diseasegroupcost, group ~ readmission, value.var = "meancost")
+```
+
+## Demographic of df_predict
+```{r}
+df_predict %>% group_by(target, surgical) %>% tally(wt = weight) %>% mutate(proportion = (n/sum(n))*100)
+diseasereadmissionrate <- df_predict %>% group_by(group, target) %>% summarise(n = n()) %>% mutate(proportion = (n/sum(n))*100)
+diseasereadmissionrate <- reshape2::dcast(diseasereadmissionrate, group ~ target, value.var = c("proportion"))
+diseasereadmissionrate <- diseasereadmissionrate[order(-diseasereadmissionrate$UR),]
+```
+
+
+## Reshape 
+
+## Collect most prevalent primary and secondary diagnosis
+```{r}
+indexicd1 <- df %>% filter(readmission == "UR") %>% group_by(index_icd_1) %>% tally() %>% mutate(proportion = (n/sum(n))*100) %>% arrange(-n)
+indexicd2 <- df %>% filter(readmission == "UR") %>% group_by(index_icd_2) %>% tally() %>% mutate(proportion = (n/sum(n))*100) %>% arrange(-n)
+```
+
+## Logistic regression
+```{r}
+df_binomial <- df %>% filter(!grepl("F", df$alphabet))
+df_binomial <- df_binomial %>% to_dummy(readmission, suffix = "label") %>% bind_cols(df_binomial) %>% select(ID, los, gender, age, ageGroup, severity, readmission_UR)
+df_binomial$severity <- as.factor(df_binomial$severity)
+fit <- glm(readmission_UR~severity+gender+ageGroup+los, data = df_binomial, family = binomial())
+summary(fit)
+exp(cbind(coef(fit), confint(fit)))
+```
+
+## Visualization
+```{r}
+plot(df_binomial$los, df_binomial$group)
+boxplot(df_binomial$los)
+```
+
+
+## Visualization Sankey
+```{r}
+sankey_df <- na.omit(df_work) %>% select(ID, group, severity, re_group, class) %>% group_by(group, severity, re_group, class) %>% summarise(values = n()) %>% arrange(-values)
+sankey_df$severity <- sub("^", "Tingkat ", sankey_df$severity)
+```
+
+```{r fig.height=9, fig.width=20}
+sankey_df %>% filter(values >= 150) %>% 
+  ggplot(aes(y=values, axis1=group, axis2 = severity, axis3=class)) +
+    geom_alluvium(aes(fill = group)) +
+    geom_stratum() +
+    geom_label(stat = "stratum", label.strata = T) +
+    scale_x_discrete(limits = c("group", "severity", "class")) +
+    theme(legend.position = "bottom")
+```
+
+## Export csv
+```{r}
+write.csv(df, "bpjsreadmission.csv", row.names = F)
+```
+
+## Python interface
+```{r}
+library(reticulate)
+use_python("C:/Users/aldilas/Miniconda3")
+```
+
+```{python}
+from keras.models import Sequential
+
+```

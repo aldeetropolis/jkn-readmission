@@ -1,0 +1,93 @@
+---
+title: "datamodelling"
+author: "aldilas"
+date: "3/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load library
+```{r library, message=FALSE, warning=FALSE}
+library(knitr)
+library(haven)
+library(mgcv)
+library(MatchIt)
+library(fastDummies)
+library(splitstackshape)
+library(tidyverse)
+library(tidymodels)
+library(glmnet)
+```
+
+## Load Data
+```{r data, echo=FALSE}
+df_index <- read_csv("data_v5.csv")
+```
+```{r}
+exclude <- df_index %>% filter(label == "I" & outcome == "Dead")
+df_class <- anti_join(df_index, exclude) %>% select(age, gender, membership, classprocedure, dxclass, label, year, los) %>% mutate_at(vars(gender, membership, classprocedure, label, year), list(factor))
+
+#df_class$severity <- factor(df_class$severity, exclude = "MISSING")
+```
+
+## Weighting with Propensity Score
+```{r}
+psmodel1 <- glm(label ~ gender + age + los + membership + classprocedure, data = df_class, family = binomial(link = "logit"))
+summary(model1)
+```
+```{r}
+df_class$pscore <- predict(psmodel1 ,type="response")
+```
+```{r}
+head(df_class)
+```
+
+```{r}
+model2 <- gam(label ~ gender + age + los + membership + classprocedure + severity, data = df_class, family = "binomial")
+summary(model1)
+```
+
+## Propensity Score Matching (undesampling with PSM)
+```{r}
+df_class$label <- factor(if_else(df_class$label == "R", 1, 0))
+```
+```{r}
+psmodel2 <- matchit(label ~ age + los + classprocedure + gender + membership, data = df_class, method = "nearest")
+df_match <- match.data(psmodel2)
+df_match <- df_match %>% cSplit_e("dxclass", sep = ",", type = "character", fill = 0) %>% select(-year, -dxclass, -dxclass_NA, -age, -los, -classprocedure, -gender, -membership, -weights, -distance)
+df_match$label <- factor(if_else(df_match$label == 1, "R", "I"))
+```
+```{r}
+match_glm <- glm(label ~ ., data = df_match, family = "binomial")
+coef_match <- tidy(match_glm)
+```
+
+## GLMNet
+```{r}
+x <- df_match %>% select(-label) %>% data.matrix()
+y <- df_match$label
+match_glmnet <- glmnet(as.factor(x), as.factor(y), family = "binomial")
+coef_match_glmnet <- tidy(coef_match_glmnet)
+```
+## GLM model on Pediatric group
+```{r}
+df_pediatric <- df_class %>% filter(age < 18)
+psmodel3 <- matchit(label ~ age + los + classprocedure + gender + membership, data = df_pediatric, method = "nearest")
+df_match_ped <- match.data(psmodel3)
+df_match_ped <- df_match_ped %>% cSplit_e("dxclass", sep = ",", type = "character", fill = 0) %>% select(-year, -dxclass, -dxclass_NA, -age, -los, -classprocedure, -gender, -membership, -weights, -distance)
+pediatric_glm <- glm(label ~ ., data = df_match_ped, family = "binomial")
+coef_pediatric <- tidy(pediatric_glm)
+```
+## GLM model on Adult group
+```{r}
+df_adult <- df_class %>% filter(age >= 18)
+psmodel4 <- matchit(label ~ age + los + classprocedure + gender + membership, data = df_adult, method = "nearest", ratio = 3)
+df_match_adult <- match.data(psmodel4)
+df_match_adult <- df_match_adult %>% cSplit_e("dxclass", sep = ",", type = "character", fill = 0) %>% select(-year, -dxclass, -dxclass_NA, -age, -los, -classprocedure, -gender, -membership, -weights, -distance)
+adult_glm <- glm(label ~ ., data = df_match_adult, family = "binomial")
+coef_adult <- tidy(adult_glm) %>% filter(p.value < 0.05)
+```
+
