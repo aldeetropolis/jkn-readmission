@@ -8,30 +8,30 @@ library(skimr)
 
 ## Load data
 load("~/Documents/Projects/Personal - Readmission Study/data.RData")
-fkrtl_sec <- read_dta("~/Documents/Dataset/BPJSKv3/05_diagnosissekunder.dta") %>% select(FKL02, FKL24) %>% 
-  rename(visitId = FKL02, icd2 = FKL24)
-fkrtl1$id <- as.character(fkrtl1$id)
-fkrtl1$visitId <- as.character(fkrtl1$visitId)
-peserta1$id <- as.character(peserta1$id)
+fkrtl_sec$id <- as.numeric(1:nrow(fkrtl_sec))
+fkrtl$PSTV01 <- as.character(fkrtl$PSTV01)
+fkrtl$FKL02 <- as.character(fkrtl$FKL02)
+peserta$PSTV01 <- as.character(peserta$PSTV01)
 
 # Calculate Charlson Comorbidity Index for each visit
-cci <- comorbidity(x = fkrtl_sec, id = "visitId", code = "icd2", score = "charlson", icd = "icd10", assign0 = FALSE)
+cci <- comorbidity(x = fkrtl_sec, id = "id", code = "FKL24", map = "charlson_icd10_quan", assign0 = FALSE)
+cci <- full_join(fkrtl_sec, cci, by = "id")
 
 ## Populate Ranap and exclude referral
-df1 <- fkrtl1 %>% 
-  filter(layanan == "RITL" & 
-           status != "Rujuk" & 
-           kelasTindakan != "Rawat Inap Kebidanan" & 
-           kelasTindakan != "Rawat Inap Neonatal" & 
-           outDate > inDate) %>% 
-  mutate(year = lubridate::year(inDate))
+df1 <- fkrtl %>% 
+  filter(FKL10 == "RITL" & 
+           FKL14 != "Rujuk" & 
+           FKL21 != "Rawat Inap Kebidanan" & 
+           FKL21 != "Rawat Inap Neonatal" & 
+           FKL04 > FKL03) %>% 
+  mutate(year = lubridate::year(FKL03))
 
 ## Calculate LOS and remove inhospital stay less than 1 days
-df1$los <- as.integer(ymd(df1$outDate)-ymd(df1$inDate))
-df2 <- df1 %>% arrange(id, inDate) %>% 
-  distinct(visitId, .keep_all = TRUE) %>% 
-  group_by(id) %>% 
-  mutate(interval = as.integer(inDate - lag(outDate))) %>% 
+df1$los <- as.integer(ymd(df1$FKL04)-ymd(df1$FKL03))
+df2 <- df1 %>% arrange(PSTV01, FKL03) %>% 
+  distinct(FKL02, .keep_all = TRUE) %>% 
+  group_by(PSTV01) %>% 
+  mutate(interval = as.integer(FKL03 - lag(FKL04))) %>% 
   ungroup() %>% 
   mutate(readmission = NA)
 
@@ -39,52 +39,58 @@ df2 <- df1 %>% arrange(id, inDate) %>%
 df2$readmission <- if_else(is.na(df2$interval), "I", 
                                  if_else(df2$interval < 0, "", 
                                          if_else(df2$interval > 30, "I", 
-                                                 if_else(df2$interval <= 30 & df2$interval >= 0 & df2$icd1 == lag(df2$icd1), "UR", "OR"))))
+                                                 if_else(df2$interval <= 30 & df2$interval >= 0 & df2$FKL18 == lag(df2$FKL18), "UR", "OR"))))
 
-df3 <- df2 %>% group_by(id) %>% filter(readmission != "") %>% 
+df3 <- df2 %>% group_by(PSTV01) %>% filter(readmission != "") %>% 
   mutate(readmission2 = lead(readmission),
          label = if_else(readmission == "I" & is.na(readmission2), "I",
                          if_else(readmission2 %in% c("OR", "I"), "I",
                                  if_else(readmission2 == "UR", "R", "")))) %>% 
-  slice(1:(n()-1)) %>% ungroup()
+  slice(1:(n()-1)) %>% 
+  ungroup() %>% 
+  left_join(cci, by = "FKL02") %>% 
+  mutate_at(vars(mi:aids), ~replace_na(., 0))
 
 df3$label <- as.factor(df3$label)
 
-
 ## Join with Peserta, calculate age and discretize into ageGroups
 df <- df3 %>% 
-  left_join(peserta1, by = "id") %>% 
-  mutate(age = as.integer(year(ymd(inDate))-year(ymd(dob))),
+  left_join(peserta, by = "PSTV01") %>% 
+  mutate(age = as.integer(year(ymd(FKL03))-year(ymd(PSTV03))),
          ageGroup = cut(age, breaks=c(-1,5,11,25,45,65,120), 
                         labels = c("Balita (0-5)", "Anak-anak (6-11)", "Remaja (12-25)", "Dewasa (26-45)", "Lansia (56-65)", "Manula (>65)")
                         )
-         )
+         ) %>% select(!c(FKL03, FKL04, FKL10, FKL14, interval, readmission, readmission2, FKL24, id, PSTV03)) %>% 
+  rename(id = PSTV01,
+         visitID = FKL02,
+         provinsi = FKL05,
+         distrik = FKL06,
+         golPeserta = FKL12,
+         kelasRawat = FKL13,
+         icd0 = FKL16,
+         icd1 = FKL18,
+         kelPenyakit = FKL20,
+         kelasProsedur = FKL21,
+         severity = FKL23,
+         cost = FKL48,
+         gender = PSTV05,
+         weight = PSTV15) %>% 
+  filter(age >= 17, icd1 != "Z511") %>% 
+  mutate(icd1 = str_sub(icd1, 1, 3))
 
-## Divide into Not readmitted and readmitted
-#df$readmit <- as.factor(if_else(df$readmission == "UR", "Readmission", "Not readmission"))
-
-## Discretize age into groups
-#df <- df3 %>% mutate(losGroup = cut(los, breaks = c(1,6,11,21,500), labels = c("1-5", "6-10", "11-20", ">20"), include.lowest = TRUE, right = FALSE)) %>% arrange(PSTV01, FKL03)
-
-## Make NA explicit
-# df$rstype <- fct_explicit_na(df$rstype, na_level = "Missing")
-# df$severity <- fct_explicit_na(df$severity, na_level = "Missing")
-# df$kelasrawat <- fct_explicit_na(df$kelasrawat, na_level = "Missing")
-# df$rsowner <- fct_explicit_na(df$rsowner, na_level = "Missing")
+data <- df %>% select(golPeserta, kelasRawat, severity, gender, kelasProsedur, los, age, ageGroup, label, mi:aids)
 
 # Summary statistics
-df_summ <- df %>% select(age, gender, status, label)
+df_summ <- df %>% select(icd1)
 tbl_summary(df_summ, by = label) %>% add_n()
+count(df, icd1) %>% arrange(-n)
 
+df_diab <- df %>% filter(icd1 == "E11")
+df_typhoid <- df %>% filter(icd1 == "A01")
 # Propensity Score Matching
 library(MatchIt)
-df_match <- matchit(label ~ age + gender, data = df, ratio = 3)
+df_match <- matchit(label ~ age + gender, data = data, ratio = 1)
 data_match <- match.data(df_match)
 
-## Try predict something
-# Split matched data into training and testing dataset
-library(tidymodels)
-df_split <- initial_split(data_match, prop = 0.80)
-df_train <- training(df_split)
-df_test <- testing(df_split)
-
+write_csv(data, "~/Documents/Projects/Personal - Readmission Study/full dataset.csv")
+write_csv(data_match, "~/Documents/Projects/Personal - Readmission Study/undersampling dataset.csv")
