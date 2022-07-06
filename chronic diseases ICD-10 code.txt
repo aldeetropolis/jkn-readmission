@@ -1,0 +1,47 @@
+No;Chronic condition;ICD-10 codes
+1;Hypertension;I10, I11, I12, I13, I14, I15
+2;Lipid metabolism disorders;E78
+3;Chronic low back pain;M40, M41, M42, M43, M45, M47, M480, M481, M482, M485, M486, M487, M488, M489, M50, M51, M52, M53, M54
+4;Severe vision reduction;H17, H18, H25, H26, H27, H28, H31, H33, H341, H342, H348, H349, H35, H36, H40, H43, H47, H54
+5;Joint arthrosis;M15, M16, M17, M18, M19
+6;Diabetes mellitus;E10, E11, E12, E13, E14
+7;Chronic ischemic heart disease;I20, I25, I21
+8;Thyroid diseases;E01, E02, E03, E04, E05, E061, E062, E063, E065, E069, E07
+9;Cardiac arrhythmias;I44, I45, I460, I469, I47, I48, I491, I492, I493, I494, I495, I496, I497, I498, I499
+10;Obesity;E66
+11;Hyperuricemia/gout;E79, M10
+12;Prostatic hyperplasia;N40
+13;Lower limb varicosis;I83, I872
+14;Liver disease;K70, K713, K174, K715, K717, K721, K727, K729, K73, K74, K76
+15;Depression;F32, F33
+16;Asthma/COPD;J40, J41, J42, J43, J44, J45, J47
+17;Gynecological problems;N81, N84, N85, N86, N87, N88, N89, N90, N93, N95
+18;Atherosclerosis/PAOD;I65, I66, I672, I70, I739
+19;Osteoporosis;M80, M81, M82
+20;Renal insufficiency;N18, N19
+21;Cerebral ischemia/chronic stroke;I60, I61, I62, I63, I64, I69, G45
+22;Cardiac insufficiency;I50
+23;Severe hearing loss;H90, H910, H911, H913, H918, H919
+24;Chronic cholecystitis/gallstones;K80, K811
+25;Somatoform disorders;F45
+26;Hemorrhoids;I84
+27;Intestinal diverticulosis;K57
+28;Rheumatoid arthritis/chronic polyarthritis;M05, M06, M790
+29;Cardiac valve disorders;I34, I35, I36, I37
+30;Neuropathies;G50, G51, G52, G53, G54, G55, G56, G57, G58, G59, G60, G61, G62, G63, G64
+31;Dizziness;H81, H82, R42
+32;Dementia;F00, F01, F02, F03, F051, G30, G31, R54
+33;Urinary incontinence;N393, N394, R32
+34;Urinary tract calculi;N20
+35;Anemia;D50, D51, D52, D53, D55, D56, D57, D58, D590, D591, D592, D594, D595, D596, D597, D598, D599, D600, D608, D609, D61, D63, D64
+36;Anxiety;F40, F41
+37;Psoriasis;L40
+38;Migraine/chronic headache;G43, G44
+39;Parkinson’s disease;G20, G21, G22
+40;Cancer; C00–C14, C15–C26, C30–C39, C40–C41, C43–C44, C45–C49, C50, C51–C58, C60–C63, C64–C68, C69–C72, C73–C75, C81–C96, C76–C80, C97, D00, D01, D02, D03, D04, D05, D06, D07, D08, D09, D37, D38, D39, D40, D41, D42, D43, D45, D46, D47, D48
+41;Allergy;H011, J30, L23, L272, L564, K522, K900, T781, T784, T887
+42;Chronic gastritis/GERD;K21, K254, K255, K256, K257, K258, K259, K264, K265, K266, K267, K268, K269, K274, K275, K276, K277, K278. K279, K284, K285, K286, K287, K288, K289, K292, K293, K294, K295, K296, K297, K298, K299
+43;Sexual dysfunction;F52, N484
+44;Insomnia;G47, F51
+45;Tobacco abuse; F17
+46;Hypotension;I95 
